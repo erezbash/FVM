@@ -168,14 +168,8 @@ public class FvmFacadeImpl implements FvmFacade {
         Set<S> afterPost = ts.getInitialStates();
         do {
             states = new HashSet<>(afterPost);
-            states
-                    .stream()
-                    .map(state -> {
-                        Set<S> post = post(ts, state);
-                        post.add(state);
-                        return post;
-                    })
-                    .forEach(afterPost::addAll);
+            afterPost = post(ts, states);
+            afterPost.addAll(states);
         } while (states.size() != afterPost.size());
         return afterPost;
     }
