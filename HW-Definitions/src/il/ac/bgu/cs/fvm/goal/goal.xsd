@@ -1,0 +1,72 @@
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="Structure">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element type="xs:string" name="Name"/>
+        <xs:element type="xs:string" name="Description"/>
+        <xs:element type="xs:string" name="Formula"/>
+        <xs:element name="Alphabet">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element type="xs:string" name="Proposition" maxOccurs="unbounded" minOccurs="0"/>
+            </xs:sequence>
+            <xs:attribute type="xs:string" name="type"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="StateSet">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="State" maxOccurs="unbounded" minOccurs="0">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element type="xs:string" name="Label"/>
+                    <xs:element type="xs:byte" name="Y"/>
+                    <xs:element type="xs:short" name="X"/>
+                    <xs:element type="xs:string" name="Properties"/>
+                  </xs:sequence>
+                  <xs:attribute type="xs:byte" name="sid" use="optional"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="InitialStateSet">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element type="xs:byte" name="StateID"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="TransitionSet">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="Transition" maxOccurs="unbounded" minOccurs="0">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element type="xs:byte" name="From"/>
+                    <xs:element type="xs:byte" name="To"/>
+                    <xs:element type="xs:string" name="Label"/>
+                    <xs:element type="xs:string" name="Properties"/>
+                  </xs:sequence>
+                  <xs:attribute type="xs:short" name="tid" use="optional"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute type="xs:string" name="complete"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Acc">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element type="xs:byte" name="StateID" maxOccurs="unbounded" minOccurs="0"/>
+            </xs:sequence>
+            <xs:attribute type="xs:string" name="type"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element type="xs:string" name="Properties"/>
+      </xs:sequence>
+      <xs:attribute type="xs:string" name="label-on"/>
+      <xs:attribute type="xs:string" name="type"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

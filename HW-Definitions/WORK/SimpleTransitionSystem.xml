@@ -1,0 +1,29 @@
+<transitionSystem>
+    <name>TS1</name>
+    <states>
+        <state sId="s1"/>
+        <state sId="s2"/>
+    </states>
+    <actions>
+        <action aId="a1"/>
+        <action aId="a2"/>
+    </actions>
+    <atomicPropositions>
+        <atomicProposition apId="p">p</atomicProposition>
+        <atomicProposition apId="q">q</atomicProposition>
+        <atomicProposition apId="q15">System has more than one output set to 1</atomicProposition>
+    </atomicPropositions>
+    <initialStates>
+        <initialState state="s1"/>
+    </initialStates>
+    <labelingFunction>
+        <entry state="s1">
+            <label atomicProposition="p"/>
+            <label atomicProposition="q15"/>
+        </entry>
+    </labelingFunction>
+    <transitions>
+        <transition from="s1" action="a1" to="s2"/>
+        <transition from="s2" action="a2" to="s1"/>
+    </transitions>
+</transitionSystem>

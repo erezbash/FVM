@@ -1,0 +1,3 @@
+if :: a == c -> bb := 1
+   :: a == b -> if :: x != y -> do :: x<3 -> x := x + 1 od fi; y := 9
+fi
