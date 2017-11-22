@@ -175,4 +175,32 @@ public class TransitionSystemImpl<STATE, ACTION, ATOMIC_PROPOSITION> implements 
             throw new InvalidInitialStateException("Validate STATE Fail " + state);
         }
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TransitionSystemImpl)) return false;
+
+        TransitionSystemImpl<?, ?, ?> that = (TransitionSystemImpl<?, ?, ?>) o;
+
+        if (getName() != null ? !getName().equals(that.getName()) : that.getName() != null) return false;
+        if (!getStates().equals(that.getStates())) return false;
+        if (!getActions().equals(that.getActions())) return false;
+        if (!getInitialStates().equals(that.getInitialStates())) return false;
+        if (!getAtomicPropositions().equals(that.getAtomicPropositions())) return false;
+        if (!getTransitions().equals(that.getTransitions())) return false;
+        return propositionHashMap.equals(that.propositionHashMap);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = getName() != null ? getName().hashCode() : 0;
+        result = 31 * result + getStates().hashCode();
+        result = 31 * result + getActions().hashCode();
+        result = 31 * result + getInitialStates().hashCode();
+        result = 31 * result + getAtomicPropositions().hashCode();
+        result = 31 * result + getTransitions().hashCode();
+        result = 31 * result + propositionHashMap.hashCode();
+        return result;
+    }
 }
