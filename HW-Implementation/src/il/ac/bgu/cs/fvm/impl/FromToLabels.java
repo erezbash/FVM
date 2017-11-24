@@ -3,10 +3,10 @@ package il.ac.bgu.cs.fvm.impl;
 import java.util.Set;
 
 class FromToLabels<STATE, ATOMIC_PROPOSITION> {
-    STATE from;
-    Set<ATOMIC_PROPOSITION> labels;
+    private STATE from;
+    private Set<ATOMIC_PROPOSITION> labels;
 
-    public FromToLabels(STATE from, Set<ATOMIC_PROPOSITION> labels) {
+    FromToLabels(STATE from, Set<ATOMIC_PROPOSITION> labels) {
         this.from = from;
         this.labels = labels;
     }

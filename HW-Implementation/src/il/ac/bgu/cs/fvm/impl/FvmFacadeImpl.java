@@ -60,7 +60,7 @@ public class FvmFacadeImpl implements FvmFacade {
     private <S, A, P> Stream<FromToLabels> getFromToLabelsStream(TransitionSystem<S, A, P> ts) {
         return ts.getTransitions()
                 .stream()
-                .map(transition -> new FromToLabels(transition.getFrom(), ts.getLabel(transition.getFrom())));
+                .map(transition -> new FromToLabels(transition.getFrom(), ts.getLabel(transition.getTo())));
     }
 
     @Override
