@@ -307,7 +307,7 @@ public class FvmFacadeImpl implements FvmFacade {
                 ts.addState(p(location, variables.get()));
                 ts.addInitialState(p(location, variables.get()));
             });
-            if(pg.getInitalizations().isEmpty()){
+            if (pg.getInitalizations().isEmpty()) {
                 ts.addState(p(location, map()));
                 ts.addInitialState(p(location, map()));
             }
@@ -361,35 +361,35 @@ public class FvmFacadeImpl implements FvmFacade {
         });
         while (!reach.isEmpty()) {
             Pair<List<L>, Map<String, Object>> from = reach.poll();
-            Map<Integer, List<PGTransition<L, A>>> simultaneous_actions = new HashMap<>();
+            Map<Integer, List<PGTransition<L, A>>> simultaneous_actions = map();
             cs.getProgramGraphs().forEach(current_pg -> {
                 current_pg.getTransitions()
                         .stream()
                         .filter(transition ->
                                 transition.getFrom().equals(from.getFirst().get(cs.getProgramGraphs().indexOf(current_pg))) && ConditionDef.evaluate(conditionDefs(), from.second, transition.getCondition()))
                         .forEach(transition -> {
-                        if (!new ParserBasedInterleavingActDef().isOneSidedAction(transition.getAction().toString())) {
-                            List<L> new_location = new ArrayList<>(from.first);
-                            new_location.set(cs.getProgramGraphs().indexOf(current_pg), transition.getTo());
-                            Map<String, Object> newEval = ActionDef.effect(actionDefs(), from.second, transition.getAction());
-                            if (newEval != null) {
-                                if (!ret.getStates().contains(p(new_location, newEval))) {
-                                    reach.add(p(new_location, newEval));
-                                    ret.addState(p(new_location, newEval));
+                            if (!new ParserBasedInterleavingActDef().isOneSidedAction(transition.getAction().toString())) {
+                                List<L> new_location = new ArrayList<>(from.first);
+                                new_location.set(cs.getProgramGraphs().indexOf(current_pg), transition.getTo());
+                                Map<String, Object> newEval = ActionDef.effect(actionDefs(), from.second, transition.getAction());
+                                if (newEval != null) {
+                                    if (!ret.getStates().contains(p(new_location, newEval))) {
+                                        reach.add(p(new_location, newEval));
+                                        ret.addState(p(new_location, newEval));
+                                    }
+                                    ret.addAction(transition.getAction());
+                                    ret.addTransition(new Transition<>(from, transition.getAction(), p(new_location, newEval)));
+                                    addAtomicAndLabel(ret, p(new_location, newEval));
                                 }
-                                ret.addAction(transition.getAction());
-                                ret.addTransition(new Transition<>(from, transition.getAction(), p(new_location, newEval)));
-                                addAtomicAndLabel(ret, p(new_location, newEval));
+                            } else {
+                                ArrayList<PGTransition<L, A>> value = new ArrayList<>();
+                                value.add(transition);
+                                simultaneous_actions.merge(cs.getProgramGraphs().indexOf(current_pg), value, ((p, x) -> {
+                                    p.addAll(x);
+                                    return p;
+                                }));
                             }
-                        } else {
-                            ArrayList<PGTransition<L, A>> value = new ArrayList<>();
-                            value.add(transition);
-                            simultaneous_actions.merge(cs.getProgramGraphs().indexOf(current_pg), value, ((p, x) -> {
-                                p.addAll(x);
-                                return p;
-                            }));
-                        }
-                });
+                        });
                 cartesianProduct(
                         simultaneous_actions.entrySet().stream().map(e -> e.getValue().stream().map(transition -> new Pair<>(e.getKey(), transition)).collect(toList())).collect(toList())
                 ).forEach(complexTransition -> {
@@ -436,23 +436,21 @@ public class FvmFacadeImpl implements FvmFacade {
     }
 
     private Set<Map<String, Object>> generateInitialActions(List<List<String>> initializations) {
-        Set<Map<String, Object>> ret = new HashSet<>();
-        for (List<String> initialization : initializations) {
-            Map<String, Object> eval = new HashMap<>();
-            for (String action : initialization) {
-                eval = ActionDef.effect(actionDefs(), eval, action);
-            }
-            ret.add(eval);
-        }
+        Set<Map<String, Object>> ret = set();
+        initializations.forEach(initialization -> {
+            AtomicReference<Map<String, Object>> eval = new AtomicReference<>(map());
+            initialization.forEach(action -> eval.set(ActionDef.effect(actionDefs(), eval.get(), action)));
+            ret.add(eval.get());
+        });
         if (ret.size() == 0) {
-            ret.add(new HashMap<>());
+            ret.add(map());
         }
         return ret;
     }
 
     private Set<ConditionDef> conditionDefs() {
         ConditionDef conditionDef = new ParserBasedCondDef();
-        Set<ConditionDef> conditionDefs = new HashSet<>();
+        Set<ConditionDef> conditionDefs = set();
         conditionDefs.add(conditionDef);
         return conditionDefs;
     }
@@ -514,16 +512,13 @@ public class FvmFacadeImpl implements FvmFacade {
             resultLists.add(new ArrayList<>());
             return resultLists;
         } else {
-            List<T> firstList = lists.get(0);
-            List<List<T>> remainingLists = cartesianProduct(lists.subList(1, lists.size()));
-            for (T condition : firstList) {
-                for (List<T> remainingList : remainingLists) {
-                    ArrayList<T> resultList = new ArrayList<>();
-                    resultList.add(condition);
-                    resultList.addAll(remainingList);
-                    resultLists.add(resultList);
-                }
-            }
+            lists.get(0).forEach(condition ->
+                    cartesianProduct(lists.subList(1, lists.size())).forEach(remainingList -> {
+                        ArrayList<T> resultList = new ArrayList<>();
+                        resultList.add(condition);
+                        resultList.addAll(remainingList);
+                        resultLists.add(resultList);
+                    }));
         }
         return resultLists;
     }
@@ -564,13 +559,9 @@ public class FvmFacadeImpl implements FvmFacade {
                     .forEach(leftState ->
                             ts.addTransition(new Transition(leftState, transition.getAction(), rightSide.stream().filter(s -> s.first.equals(leftState.first)).findFirst().get())));
         });
-        handShakingActions.forEach(action -> {
-            ts1.getTransitions().stream().filter(t1 -> action.equals(t1.getAction())).forEach(t1 -> {
-                ts2.getTransitions().stream().filter(t2 -> action.equals(t2.getAction())).forEach(t2 -> {
-                    ts.addTransition(new Transition<>(p(t1.getFrom(), t2.getFrom()), action, p(t1.getTo(), t2.getTo())));
-                });
-            });
-        });
+        handShakingActions.forEach(action -> ts1.getTransitions().stream().filter(t1 -> action.equals(t1.getAction())).forEach(t1 ->
+                ts2.getTransitions().stream().filter(t2 -> action.equals(t2.getAction())).forEach(t2 ->
+                        ts.addTransition(new Transition<>(p(t1.getFrom(), t2.getFrom()), action, p(t1.getTo(), t2.getTo()))))));
     }
 
     private <S, A, P> Set<Transition<S, A>> alternatingSequence(AlternatingSequence<S, A> e, TransitionSystem<S, A, P> ts) {
@@ -602,7 +593,7 @@ public class FvmFacadeImpl implements FvmFacade {
     }
 
     private Set<ActionDef> actionDefs() {
-        Set<ActionDef> actionDefs = new HashSet<>();
+        Set<ActionDef> actionDefs = set();
         InterleavingActDef actionDef = new ParserBasedInterleavingActDef();
         actionDefs.add(new ParserBasedActDef());
         actionDefs.add(actionDef);
@@ -610,20 +601,16 @@ public class FvmFacadeImpl implements FvmFacade {
     }
 
     private Set<ActionDef> emptyQAction() {
-        Set<ActionDef> complexActionDefSet = new HashSet<>();
+        Set<ActionDef> complexActionDefSet = set();
         complexActionDefSet.add(new ParserBasedInterleavingActDef());
         return complexActionDefSet;
     }
 
 
-    private ProgramGraph<String, String> pgFromRoot(StmtContext root)
-    {
-
+    private ProgramGraph<String, String> pgFromRoot(StmtContext root) {
         ProgramGraph<String, String> pg = createProgramGraph();
-
-        HashSet<String> loc = new HashSet<>();
+        Set<String> loc = set();
         loc = sub(root, loc, pg);
-
         loc.forEach(pg::addLocation);
         pg.addInitialLocation(root.getText());
         pg.getLocations().forEach(pg::removeLocation);
@@ -633,216 +620,148 @@ public class FvmFacadeImpl implements FvmFacade {
 
     }
 
-    private HashSet<String> sub(StmtContext root, HashSet<String> loc, ProgramGraph<String, String> pg)
-    {
+    private Set<String> sub(StmtContext root, Set<String> loc, ProgramGraph<String, String> pg) {
 
         if (root.assstmt() != null || root.chanreadstmt() != null || root.chanwritestmt() != null ||
-                root.atomicstmt() != null || root.skipstmt() != null)
-        {
+                root.atomicstmt() != null || root.skipstmt() != null) {
             loc.add("");
             loc.add(root.getText());
-
-            if (root.assstmt() != null || root.chanreadstmt() != null || root.chanwritestmt() != null)
-            {
-                PGTransition<String, String> t = new PGTransition<String, String>(root.getText(), "", root.getText(), "");
+            if (root.assstmt() != null || root.chanreadstmt() != null || root.chanwritestmt() != null) {
+                PGTransition<String, String> t = pgtransition(root.getText(), "", root.getText(), "");
                 pg.addTransition(t);
-            } else if (root.atomicstmt() != null)
-            {
+            } else if (root.atomicstmt() != null) {
 
-                PGTransition<String, String> t = new PGTransition<String, String>(root.getText(), "", root.getText(), "");
+                PGTransition<String, String> t = pgtransition(root.getText(), "", root.getText(), "");
                 pg.addTransition(t);
-            } else if (root.skipstmt() != null)
-            {
-                PGTransition<String, String> t = new PGTransition<String, String>(root.getText(), "", "skip", "");
+            } else if (root.skipstmt() != null) {
+                PGTransition<String, String> t = pgtransition(root.getText(), "", "skip", "");
                 pg.addTransition(t);
             }
-        } else if (root.ifstmt() != null)
-        {
-//			System.out.println(root.);
+        } else if (root.ifstmt() != null) {
             loc.add(root.getText());
-
             List<OptionContext> options = root.ifstmt().option();
-
-            for (OptionContext option : options)
-            {
-                HashSet<String> emptyLoc = new HashSet<String>();
+            options.forEach(option -> {
+                Set<String> emptyLoc = set();
                 loc.addAll(sub(option.stmt(), emptyLoc, pg));
-            }
+            });
 
-            Set<PGTransition<String, String>> transitions = pg.getTransitions(); //trans so far
-
-            for (OptionContext option : options)
-            {
+            Set<PGTransition<String, String>> transitions = pg.getTransitions();
+            options.forEach(option -> {
                 String fromToCheck = option.stmt().getText();
 
-                for (PGTransition<String, String> trans : transitions)
-                {
-                    if (trans.getFrom().equals(fromToCheck))
-                    {
+                transitions.forEach(trans -> {
+                    if (trans.getFrom().equals(fromToCheck)) {
                         PGTransition<String, String> t;
-                        if (!(trans.getCondition().equals("")))
-                        {
-                            t = new PGTransition<String, String>(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), trans.getTo());
-                        } else
-                        {
-                            t = new PGTransition<String, String>(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), trans.getTo());
+                        if (!(trans.getCondition().equals(""))) {
+                            t = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), trans.getTo());
+                        } else {
+                            t = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), trans.getTo());
                         }
                         pg.addTransition(t);
                     }
-                }
-            }
-
-        } else if (root.dostmt() != null)
-        {
+                });
+            });
+        } else if (root.dostmt() != null) {
             loc.add(root.getText());
             loc.add("");
-
             List<OptionContext> options = root.dostmt().option();
-            for (OptionContext option : options)
-            { //need to check if .stmt() is needed
-                HashSet<String> emptyLoc = new HashSet<String>();
-                HashSet<String> temp = sub(option.stmt(), emptyLoc, pg);
+            options.forEach(option -> {
+                Set<String> emptyLoc = set();
+                Set<String> temp = sub(option.stmt(), emptyLoc, pg);
                 temp.remove("");
-
                 String loopStmtWithSpaces = addSpaces(root.getText());
-                for (String str : temp)
-                {
+                temp.forEach(str -> {
                     loc.add(str + ";" + root.getText());
-
                     String strWithSpaces = addSpaces(str);
                     String s = strWithSpaces + " ; " + loopStmtWithSpaces;
                     StmtContext secondRoot = NanoPromelaFileReader.pareseNanoPromelaString(s);
-
                     addAdditionalTransactions(secondRoot, pg);
-                }
+                });
+            });
+            StringBuilder allRules = new StringBuilder("(");
+            for (OptionContext option : options) {
+                allRules.append(option.boolexpr().getText()).append(")||(");
             }
-            //first cond
-            String allRules = "(";
-            for (OptionContext option : options)
-            {
-                allRules = allRules + option.boolexpr().getText() + ")||(";
-            }
-            allRules = allRules.substring(0, allRules.length() - 3);
-            PGTransition<String, String> t = new PGTransition<String, String>(root.getText(), "!(" + allRules + ")", "", "");
+            allRules = new StringBuilder(allRules.substring(0, allRules.length() - 3));
+            PGTransition<String, String> t = pgtransition(root.getText(), "!(" + allRules + ")", "", "");
             pg.addTransition(t);
-
-            //second cond
-
-            for (OptionContext option : options)
-            {
+            options.forEach(option -> {
                 String fromToCheck = option.stmt().getText();
+                pg.getTransitions()
+                        .stream()
+                        .map(trans -> {
+                            if (trans.getFrom().equals(fromToCheck) && trans.getTo().equals("")) {
+                                PGTransition<String, String> t2;
+                                if (!(trans.getCondition().equals(""))) {
+                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), root.getText());
+                                } else {
+                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), root.getText());
+                                }
+                                return t2;
+                            } else if (trans.getFrom().equals(fromToCheck) && !(trans.getTo().equals(""))) {
+                                PGTransition<String, String> t2;
+                                if (!(trans.getCondition().equals(""))) {
+                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
+                                } else {
+                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
+                                }
+                                return t2;
+                            } else return null;
+                        }).filter(Objects::nonNull).forEach(pg::addTransition);
+            });
 
-                pg.getTransitions().stream().map(trans -> {
-                    if (trans.getFrom().equals(fromToCheck) && trans.getTo().equals(""))
-                    {
-                        PGTransition<String, String> t2;
-                        if (!(trans.getCondition().equals("")))
-                        {
-                            t2 = new PGTransition<String, String>(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), root.getText());
-                        } else
-                        {
-                            t2 = new PGTransition<String, String>(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), root.getText());
-                        }
-                        return t2;
-                    } else if (trans.getFrom().equals(fromToCheck) && !(trans.getTo().equals("")))
-                    {
-                        PGTransition<String, String> t2;
-                        if (!(trans.getCondition().equals("")))
-                        {
-                            t2 = new PGTransition<String, String>(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
-                        } else
-                        {
-                            t2 = new PGTransition<String, String>(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
-                        }
-                        return t2;
-                    } else return null;
-                }).filter(Objects::nonNull).forEach(pg::addTransition);
-            }
-
-        } else
-        { // ;
-            HashSet<String> emptyLoc1 = new HashSet<String>();
+        } else {
+            Set<String> emptyLoc1 = set();
             loc.addAll(sub(root.stmt(1), emptyLoc1, pg));
-
-            HashSet<String> emptyLoc0 = new HashSet<String>();
-            HashSet<String> temp = sub(root.stmt(0), emptyLoc0, pg);
+            Set<String> emptyLoc0 = set();
+            Set<String> temp = sub(root.stmt(0), emptyLoc0, pg);
             temp.remove("");
             String secondStmtWithSpaces = addSpaces(root.stmt(1).getText());
-
-            for (String str : temp)
-            {
-
+            temp.forEach(str -> {
                 loc.add(str + ";" + root.stmt(1).getText());
-
                 String strWithSpaces = addSpaces(str);
                 String s = strWithSpaces + " ; " + secondStmtWithSpaces;
                 StmtContext secondRoot = NanoPromelaFileReader.pareseNanoPromelaString(s);
-
                 addAdditionalTransactions(secondRoot, pg);
-
-            }
+            });
             addAdditionalTransactions(root, pg);
         }
 
         return loc;
     }
 
-    private HashSet<String> reachableOnly(ProgramGraph<String, String> pg)
-    {
-        Set<String> initialLocs = pg.getInitialLocations();
-
-        HashSet<String> toReturn = new HashSet<String>();
-
-        for (String loc : initialLocs)
-        {
+    private Set<String> reachableOnly(ProgramGraph<String, String> pg) {
+        Set<String> toReturn = set();
+        pg.getInitialLocations().forEach(loc -> {
             toReturn.add(loc);
             toReturn.addAll(reachableOnly(pg, toReturn, loc));
-        }
-
+        });
         return toReturn;
     }
 
-    private Set<String> reachableOnly(ProgramGraph<String, String> pg, Set<String> toReturn, String loc)
-    {
-        Set<PGTransition<String, String>> transitions = pg.getTransitions();
+    private Set<String> reachableOnly(ProgramGraph<String, String> pg, Set<String> toReturn, String loc) {
 
-        boolean flag = false;
-
-        for (PGTransition<String, String> trans : transitions)
-        {
-            if (trans.getFrom().equals(loc))
-            {
-                flag = true;
-                if (!toReturn.contains(trans.getTo()))
-                {
+        pg.getTransitions().stream()
+                .filter(trans -> trans.getFrom().equals(loc) && !toReturn.contains(trans.getTo()))
+                .forEach(trans -> {
                     toReturn.add(trans.getTo());
                     reachableOnly(pg, toReturn, trans.getTo());
-                }
-            }
-        }
-        if (!flag)
-        {
-            return toReturn;
-        }
+                });
         return toReturn;
     }
 
 
-    private String addSpaces(String str)
-    {
-        str = str.replace("nsoda", "sagivmapgavker");
-        str = str.replace("fi", " fi");
-        str = str.replace("if", "if ");
-        str = str.replace("od", " od");
-        str = str.replace("do", "do ");
-        str = str.replace("::", ":: ");
-
-
-        str = str.replace("->", " -> ");
-        str = str.replace("skip", " skip");
-        str = str.replace("atomic", "atomic ");
-        str = str.replace("sagivmapgavker", "nsoda");
-        return str;
+    private String addSpaces(String str) {
+        return
+                str
+                        .replace("fi", " fi").
+                        replace("if", "if ").
+                        replace("od", " od").
+                        replace("do", "do ").
+                        replace("::", ":: ").
+                        replace("->", " -> ").
+                        replace("skip", " skip").
+                        replace("atomic", "atomic ");
     }
 
 
@@ -850,25 +769,17 @@ public class FvmFacadeImpl implements FvmFacade {
         pg.getTransitions().stream().map(trans -> {
             String toCheck = secondRoot.stmt(0).getText();
             if (trans.getFrom().equals(toCheck) && trans.getTo().equals(""))
-            {
-                        return new PGTransition<>(secondRoot.getText(), trans.getCondition(), trans.getAction(), secondRoot.stmt(1).getText());
-            } else if (trans.getFrom().equals(toCheck) && !(trans.getTo().equals("")))
-            {
-                        return new PGTransition<>(secondRoot.getText(), trans.getCondition(), trans.getAction(), trans.getTo() + ";" + secondRoot.stmt(1).getText());
-            } else return null;
+                return pgtransition(secondRoot.getText(), trans.getCondition(), trans.getAction(), secondRoot.stmt(1).getText());
+            else if (trans.getFrom().equals(toCheck) && !(trans.getTo().equals("")))
+                return pgtransition(secondRoot.getText(), trans.getCondition(), trans.getAction(), trans.getTo() + ";" + secondRoot.stmt(1).getText());
+            else return null;
         }).filter(Objects::nonNull).forEach(pg::addTransition);
     }
 
-    private void removeWasteTrans(ProgramGraph<String, String> pg)
-    {
+    private void removeWasteTrans(ProgramGraph<String, String> pg) {
         Set<String> locations = pg.getLocations();
-
-        for (PGTransition<String, String> trans : pg.getTransitions())
-        {
-            if (!locations.contains(trans.getFrom()) || !locations.contains(trans.getTo())) {
-                pg.removeTransition(trans);
-            }
-        }
-
+        pg.getTransitions().stream()
+                .filter(trans -> !locations.contains(trans.getFrom()) || !locations.contains(trans.getTo()))
+                .forEach(pg::removeTransition);
     }
 }
