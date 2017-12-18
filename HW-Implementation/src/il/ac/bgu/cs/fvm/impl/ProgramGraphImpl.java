@@ -3,6 +3,7 @@ package il.ac.bgu.cs.fvm.impl;
 import il.ac.bgu.cs.fvm.programgraph.PGTransition;
 import il.ac.bgu.cs.fvm.programgraph.ProgramGraph;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -11,10 +12,10 @@ import static il.ac.bgu.cs.fvm.util.CollectionHelper.set;
 public class ProgramGraphImpl<LOCATION, A> implements ProgramGraph<LOCATION, A> {
 
     private String name;
-    private Set<LOCATION> locations = set();
-    private Set<LOCATION> initialStates = set();
-    private Set<PGTransition<LOCATION, A>> pgTransitions = set();
-    private Set<List<String>> initalizations = set();
+    private Set<LOCATION> locations =new HashSet<>();
+    private Set<LOCATION> initialStates = new HashSet<>();
+    private Set<PGTransition<LOCATION, A>> pgTransitions = new HashSet<>();
+    private Set<List<String>> initalizations = new HashSet<>();
 
     @Override
     public void addInitalization(List<String> init) {
@@ -38,17 +39,17 @@ public class ProgramGraphImpl<LOCATION, A> implements ProgramGraph<LOCATION, A> 
 
     @Override
     public Set<List<String>> getInitalizations() {
-        return initalizations;
+        return new HashSet<>(initalizations);
     }
 
     @Override
     public Set<LOCATION> getInitialLocations() {
-        return initialStates;
+        return new HashSet<>(initialStates);
     }
 
     @Override
     public Set<LOCATION> getLocations() {
-        return locations;
+        return new HashSet<>(locations);
     }
 
     @Override
@@ -58,7 +59,7 @@ public class ProgramGraphImpl<LOCATION, A> implements ProgramGraph<LOCATION, A> 
 
     @Override
     public Set<PGTransition<LOCATION, A>> getTransitions() {
-        return pgTransitions;
+        return new HashSet<>(pgTransitions);
     }
 
     @Override
