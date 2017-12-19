@@ -37,7 +37,7 @@ import static java.util.stream.Collectors.toSet;
 /**
  * Implement the methods in this class. You may add additional classes as you
  * want, as long as they live in the {@code impl} package, or one of its
- * sub-packages.
+ * subAndCut-packages.
  */
 public class FvmFacadeImpl implements FvmFacade {
 
@@ -462,21 +462,23 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public ProgramGraph<String, String> programGraphFromNanoPromela(String filename) throws Exception {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement programGraphFromNanoPromela
+        StmtContext init = NanoPromelaFileReader.pareseNanoPromelaFile(filename);
+
+        return programGraphFromTree(init);
     }
 
     @Override
     public ProgramGraph<String, String> programGraphFromNanoPromelaString(String nanopromela) throws Exception {
-        StmtContext root = NanoPromelaFileReader.pareseNanoPromelaString(nanopromela);
+        StmtContext init = NanoPromelaFileReader.pareseNanoPromelaString(nanopromela);
 
-        return pgFromRoot(root);
+        return programGraphFromTree(init);
     }
 
     @Override
     public ProgramGraph<String, String> programGraphFromNanoPromela(InputStream inputStream) throws Exception {
-        StmtContext root = NanoPromelaFileReader.parseNanoPromelaStream(inputStream);
+        StmtContext init = NanoPromelaFileReader.parseNanoPromelaStream(inputStream);
 
-        return pgFromRoot(root);
+        return programGraphFromTree(init);
     }
 
     @Override
@@ -607,151 +609,143 @@ public class FvmFacadeImpl implements FvmFacade {
     }
 
 
-    private ProgramGraph<String, String> pgFromRoot(StmtContext root) {
+    private ProgramGraph<String, String> programGraphFromTree(StmtContext init) {
         ProgramGraph<String, String> pg = createProgramGraph();
-        Set<String> loc = set();
-        loc = sub(root, loc, pg);
-        loc.forEach(pg::addLocation);
-        pg.addInitialLocation(root.getText());
-        pg.getLocations().forEach(pg::removeLocation);
-        reachableOnly(pg).forEach(pg::addLocation);
-        removeWasteTrans(pg);
-        return pg;
+        Set<String> locations = set();
+        locations = subAndCut(init, locations, pg);
+        locations.forEach(pg::addLocation);
+        pg.addInitialLocation(init.getText());
+        return clearUnReachAble(pg);
 
     }
-
-    private Set<String> sub(StmtContext root, Set<String> loc, ProgramGraph<String, String> pg) {
+    private Set<String> subAndCut(StmtContext root, Set<String> locations, ProgramGraph<String, String> pg) {
 
         if (root.assstmt() != null || root.chanreadstmt() != null || root.chanwritestmt() != null ||
                 root.atomicstmt() != null || root.skipstmt() != null) {
-            loc.add("");
-            loc.add(root.getText());
+            locations.add("");
+            locations.add(root.getText());
             if (root.assstmt() != null || root.chanreadstmt() != null || root.chanwritestmt() != null) {
-                PGTransition<String, String> t = pgtransition(root.getText(), "", root.getText(), "");
-                pg.addTransition(t);
+                PGTransition<String, String> transaction = pgtransition(root.getText(), "", root.getText(), "");
+                pg.addTransition(transaction);
             } else if (root.atomicstmt() != null) {
 
-                PGTransition<String, String> t = pgtransition(root.getText(), "", root.getText(), "");
-                pg.addTransition(t);
+                PGTransition<String, String> transaction = pgtransition(root.getText(), "", root.getText(), "");
+                pg.addTransition(transaction);
             } else if (root.skipstmt() != null) {
-                PGTransition<String, String> t = pgtransition(root.getText(), "", "skip", "");
-                pg.addTransition(t);
+                PGTransition<String, String> transaction = pgtransition(root.getText(), "", "skip", "");
+                pg.addTransition(transaction);
             }
         } else if (root.ifstmt() != null) {
-            loc.add(root.getText());
+            locations.add(root.getText());
             List<OptionContext> options = root.ifstmt().option();
             options.forEach(option -> {
-                Set<String> emptyLoc = set();
-                loc.addAll(sub(option.stmt(), emptyLoc, pg));
+                locations.addAll(subAndCut(option.stmt(), set(), pg));
             });
 
             Set<PGTransition<String, String>> transitions = pg.getTransitions();
             options.forEach(option -> {
                 String fromToCheck = option.stmt().getText();
 
-                transitions.forEach(trans -> {
-                    if (trans.getFrom().equals(fromToCheck)) {
-                        PGTransition<String, String> t;
-                        if (!(trans.getCondition().equals(""))) {
-                            t = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), trans.getTo());
+                transitions.forEach(transaction -> {
+                    if (transaction.getFrom().equals(fromToCheck)) {
+                        PGTransition<String, String> trans;
+                        if (!(transaction.getCondition().equals(""))) {
+                            trans = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + transaction.getCondition() + ")", transaction.getAction(), transaction.getTo());
                         } else {
-                            t = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), trans.getTo());
+                            trans = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", transaction.getAction(), transaction.getTo());
                         }
-                        pg.addTransition(t);
+                        pg.addTransition(trans);
                     }
                 });
             });
         } else if (root.dostmt() != null) {
-            loc.add(root.getText());
-            loc.add("");
+            locations.add(root.getText());
+            locations.add("");
             List<OptionContext> options = root.dostmt().option();
             options.forEach(option -> {
-                Set<String> emptyLoc = set();
-                Set<String> temp = sub(option.stmt(), emptyLoc, pg);
+                Set<String> temp = subAndCut(option.stmt(), set(), pg);
                 temp.remove("");
-                String loopStmtWithSpaces = addSpaces(root.getText());
+                String loopStmtWithSpaces = fixSpaces(root.getText());
                 temp.forEach(str -> {
-                    loc.add(str + ";" + root.getText());
-                    String strWithSpaces = addSpaces(str);
+                    locations.add(str + ";" + root.getText());
+                    String strWithSpaces = fixSpaces(str);
                     String s = strWithSpaces + " ; " + loopStmtWithSpaces;
                     StmtContext secondRoot = NanoPromelaFileReader.pareseNanoPromelaString(s);
-                    addAdditionalTransactions(secondRoot, pg);
+                    ProgramGraphTransactionsAdding(secondRoot, pg);
                 });
             });
-            StringBuilder allRules = new StringBuilder("(");
+            StringBuilder cutingRules = new StringBuilder("(");
             for (OptionContext option : options) {
-                allRules.append(option.boolexpr().getText()).append(")||(");
+                cutingRules.append(option.boolexpr().getText()).append(")||(");
             }
-            allRules = new StringBuilder(allRules.substring(0, allRules.length() - 3));
-            PGTransition<String, String> t = pgtransition(root.getText(), "!(" + allRules + ")", "", "");
-            pg.addTransition(t);
+            cutingRules = new StringBuilder(cutingRules.substring(0, cutingRules.length() - 3));
+            PGTransition<String, String> transaction = pgtransition(root.getText(), "!(" + cutingRules + ")", "", "");
+            pg.addTransition(transaction);
             options.forEach(option -> {
-                String fromToCheck = option.stmt().getText();
+                String fromLocations = option.stmt().getText();
                 pg.getTransitions()
                         .stream()
                         .map(trans -> {
-                            if (trans.getFrom().equals(fromToCheck) && trans.getTo().equals("")) {
-                                PGTransition<String, String> t2;
+                            if (trans.getFrom().equals(fromLocations) && trans.getTo().equals("")) {
+                                PGTransition<String, String> _transaction;
                                 if (!(trans.getCondition().equals(""))) {
-                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), root.getText());
+                                    _transaction = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), root.getText());
                                 } else {
-                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), root.getText());
+                                    _transaction = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), root.getText());
                                 }
-                                return t2;
-                            } else if (trans.getFrom().equals(fromToCheck) && !(trans.getTo().equals(""))) {
-                                PGTransition<String, String> t2;
+                                return _transaction;
+                            } else if (trans.getFrom().equals(fromLocations) && !(trans.getTo().equals(""))) {
+                                PGTransition<String, String> _transaction;
                                 if (!(trans.getCondition().equals(""))) {
-                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
+                                    _transaction = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ") && (" + trans.getCondition() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
                                 } else {
-                                    t2 = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
+                                    _transaction = pgtransition(root.getText(), "(" + option.boolexpr().getText() + ")", trans.getAction(), trans.getTo() + ";" + root.getText());
                                 }
-                                return t2;
+                                return _transaction;
                             } else return null;
                         }).filter(Objects::nonNull).forEach(pg::addTransition);
             });
 
         } else {
-            Set<String> emptyLoc1 = set();
-            loc.addAll(sub(root.stmt(1), emptyLoc1, pg));
-            Set<String> emptyLoc0 = set();
-            Set<String> temp = sub(root.stmt(0), emptyLoc0, pg);
+            locations.addAll(subAndCut(root.stmt(1), set(), pg));
+            Set<String> temp = subAndCut(root.stmt(0), set(), pg);
             temp.remove("");
-            String secondStmtWithSpaces = addSpaces(root.stmt(1).getText());
+            String secondStmtWithSpaces = fixSpaces(root.stmt(1).getText());
             temp.forEach(str -> {
-                loc.add(str + ";" + root.stmt(1).getText());
-                String strWithSpaces = addSpaces(str);
+                locations.add(str + ";" + root.stmt(1).getText());
+                String strWithSpaces = fixSpaces(str);
                 String s = strWithSpaces + " ; " + secondStmtWithSpaces;
                 StmtContext secondRoot = NanoPromelaFileReader.pareseNanoPromelaString(s);
-                addAdditionalTransactions(secondRoot, pg);
+                ProgramGraphTransactionsAdding(secondRoot, pg);
             });
-            addAdditionalTransactions(root, pg);
+            ProgramGraphTransactionsAdding(root, pg);
         }
 
-        return loc;
+        return locations;
     }
 
-    private Set<String> reachableOnly(ProgramGraph<String, String> pg) {
-        Set<String> toReturn = set();
-        pg.getInitialLocations().forEach(loc -> {
-            toReturn.add(loc);
-            toReturn.addAll(reachableOnly(pg, toReturn, loc));
+    private Set<String> reach(ProgramGraph<String, String> pg) {
+        Set<String> reachableLocations = set();
+        pg.getInitialLocations().forEach(location -> {
+            reachableLocations.add(location);
+            reachableLocations.addAll(reach(pg, reachableLocations, location));
         });
-        return toReturn;
+        return reachableLocations;
     }
 
-    private Set<String> reachableOnly(ProgramGraph<String, String> pg, Set<String> toReturn, String loc) {
+    private Set<String> reach(ProgramGraph<String, String> pg, Set<String> reachableLocations, String location) {
 
         pg.getTransitions().stream()
-                .filter(trans -> trans.getFrom().equals(loc) && !toReturn.contains(trans.getTo()))
-                .forEach(trans -> {
-                    toReturn.add(trans.getTo());
-                    reachableOnly(pg, toReturn, trans.getTo());
+                .filter(transaction -> transaction.getFrom().equals(location) && !reachableLocations.contains(transaction.getTo()))
+                .forEach(transaction -> {
+                    reachableLocations.add(transaction.getTo());
+                    reach(pg, reachableLocations, transaction.getTo());
                 });
-        return toReturn;
+        return reachableLocations;
     }
 
 
-    private String addSpaces(String str) {
+    private String fixSpaces(String str) {
         return
                 str
                         .replace("fi", " fi").
@@ -765,21 +759,24 @@ public class FvmFacadeImpl implements FvmFacade {
     }
 
 
-    private void addAdditionalTransactions(StmtContext secondRoot, ProgramGraph<String, String> pg) {
-        pg.getTransitions().stream().map(trans -> {
-            String toCheck = secondRoot.stmt(0).getText();
-            if (trans.getFrom().equals(toCheck) && trans.getTo().equals(""))
-                return pgtransition(secondRoot.getText(), trans.getCondition(), trans.getAction(), secondRoot.stmt(1).getText());
-            else if (trans.getFrom().equals(toCheck) && !(trans.getTo().equals("")))
-                return pgtransition(secondRoot.getText(), trans.getCondition(), trans.getAction(), trans.getTo() + ";" + secondRoot.stmt(1).getText());
+    private void ProgramGraphTransactionsAdding(StmtContext root, ProgramGraph<String, String> pg) {
+        pg.getTransitions().stream().map(transaction -> {
+            String location = root.stmt(0).getText();
+            if (transaction.getFrom().equals(location) && transaction.getTo().equals(""))
+                return pgtransition(root.getText(), transaction.getCondition(), transaction.getAction(), root.stmt(1).getText());
+            else if (transaction.getFrom().equals(location) && !(transaction.getTo().equals("")))
+                return pgtransition(root.getText(), transaction.getCondition(), transaction.getAction(), transaction.getTo() + ";" + root.stmt(1).getText());
             else return null;
         }).filter(Objects::nonNull).forEach(pg::addTransition);
     }
 
-    private void removeWasteTrans(ProgramGraph<String, String> pg) {
+    private ProgramGraph<String, String> clearUnReachAble(ProgramGraph<String, String> pg) {
+        pg.getLocations().forEach(pg::removeLocation);
+        reach(pg).forEach(pg::addLocation);
         Set<String> locations = pg.getLocations();
         pg.getTransitions().stream()
-                .filter(trans -> !locations.contains(trans.getFrom()) || !locations.contains(trans.getTo()))
+                .filter(transaction -> !locations.contains(transaction.getFrom()) || !locations.contains(transaction.getTo()))
                 .forEach(pg::removeTransition);
+        return pg;
     }
 }
