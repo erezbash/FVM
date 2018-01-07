@@ -16,7 +16,9 @@ import il.ac.bgu.cs.fvm.transitionsystem.AlternatingSequence;
 import il.ac.bgu.cs.fvm.transitionsystem.Transition;
 import il.ac.bgu.cs.fvm.transitionsystem.TransitionSystem;
 import il.ac.bgu.cs.fvm.util.Pair;
+import il.ac.bgu.cs.fvm.verification.VerificationFailed;
 import il.ac.bgu.cs.fvm.verification.VerificationResult;
+import il.ac.bgu.cs.fvm.verification.VerificationSucceeded;
 
 import java.io.InputStream;
 import java.util.*;
@@ -457,7 +459,33 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <Sts, Saut, A, P> TransitionSystem<Pair<Sts, Saut>, A, Saut> product(TransitionSystem<Sts, A, P> ts, Automaton<Saut, P> aut) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement product
+        TransitionSystem<Pair<Sts, Saut>, A, Saut> ret = createTransitionSystem();
+        Set<Sts> tsInitialStates = ts.getInitialStates();
+        Iterable<Saut> initialStates = aut.getInitialStates();
+        Queue<Pair<Sts, Saut>> reach = new LinkedList<>();
+        initializeInitialStates(ts, aut, ret, tsInitialStates, initialStates, reach);
+
+        while (!reach.isEmpty()) {
+            Pair<Sts, Saut> head = reach.poll();
+            Set<Transition<Sts, A>> transitions = getTransitions(head, ts);
+            transitions.forEach(transition -> {
+                Set<P> state_atomic_prop = ts.getLabel(transition.getTo());
+                Set<Saut> next_aut_states = aut.nextStates(head.getSecond(), state_atomic_prop);
+                if (next_aut_states != null) {
+                    ret.addAllAtomicPropositions(next_aut_states);
+                    next_aut_states.stream().map(state -> p(transition.getTo(), state)).forEach(next_state -> {
+                        if (!ret.getStates().contains(next_state)) {
+                            ret.addState(next_state);
+                            reach.add(next_state);
+                        }
+                        ret.addToLabel(next_state, (Saut) next_state.second);
+                        ret.addAction(transition.getAction());
+                        ret.addTransition(new Transition<>(head, transition.getAction(), next_state));
+                    });
+                }
+            });
+        }
+        return ret;
     }
 
     @Override
@@ -483,7 +511,38 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <S, A, P, Saut> VerificationResult<S> verifyAnOmegaRegularProperty(TransitionSystem<S, A, P> ts, Automaton<Saut, P> aut) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement verifyAnOmegaRegularProperty
+        Queue<Pair<S, Saut>> to_iterate = new LinkedList();
+        Set<Pair<S, Saut>> R = new HashSet();
+        Stack<Pair<S, Saut>> U = new Stack<>();
+        Stack<Pair<S, Saut>> V = new Stack();
+        Set<Pair<S, Saut>> T = new HashSet();
+        Boolean flag = Boolean.FALSE;
+
+
+        TransitionSystem<Pair<S, Saut>, A, Saut> product = product(ts, aut);
+        to_iterate.addAll(product.getInitialStates());
+
+        while (to_iterate.size() > 0 && !flag) {
+            Pair<S, Saut> state = to_iterate.poll();
+            if (!R.contains(state))
+                flag = reachableCycle(state, R, U, V, T, product, aut);
+        }
+
+        if (flag) {
+            VerificationFailed result = new VerificationFailed();
+            List<Pair<S, Saut>> l = new ArrayList();
+            l.addAll(U);
+            l.addAll(V);
+            List prefix = new ArrayList();
+            List circle = new ArrayList();
+            l.subList(0, l.indexOf(l.get(l.size() - 1))).stream().map(Pair::getFirst).forEach(prefix::add);
+            l.subList(l.indexOf(l.get(l.size() - 1)), l.size() - 1).stream().map(Pair::getFirst).forEach(circle::add);
+            result.setCycle(circle);
+            result.setPrefix(prefix);
+            return result;
+        } else
+            return new VerificationSucceeded<>();
+
     }
 
     @Override
@@ -618,6 +677,7 @@ public class FvmFacadeImpl implements FvmFacade {
         return clearUnReachAble(pg);
 
     }
+
     private Set<String> subAndCut(StmtContext root, Set<String> locations, ProgramGraph<String, String> pg) {
 
         if (root.assstmt() != null || root.chanreadstmt() != null || root.chanwritestmt() != null ||
@@ -778,5 +838,75 @@ public class FvmFacadeImpl implements FvmFacade {
                 .filter(transaction -> !locations.contains(transaction.getFrom()) || !locations.contains(transaction.getTo()))
                 .forEach(pg::removeTransition);
         return pg;
+    }
+
+
+    private <S, Saut> boolean reachableCycle(Pair<S, Saut> state, Set<Pair<S, Saut>> r, Stack<Pair<S, Saut>> u, Stack<Pair<S, Saut>> v, Set<Pair<S, Saut>> t, TransitionSystem<Pair<S, Saut>, ?, Saut> product, Automaton<Saut, ?> aut) {
+        boolean flag = false;
+        u.push(state);
+        r.add(state);
+        Set<Saut> acceptingStates = aut.getAcceptingStates();
+        while (u.size() > 0 && !flag) {
+            Pair<S, Saut> sSautPair = u.peek();
+            Set<Pair<S, Saut>> postSTag = post(product, sSautPair);
+            postSTag.removeAll(r);
+            if (postSTag.isEmpty()) {
+                u.pop();
+                if (acceptingStates.contains(sSautPair.second))
+                    flag = cycleCheck(sSautPair, product, v, t);
+            } else {
+                Pair<S, Saut> sTagTag = (Pair<S, Saut>) postSTag.toArray()[0];
+                u.push(sTagTag);
+                r.add(sTagTag);
+            }
+        }
+        return flag;
+    }
+
+    private <S, Saut> boolean cycleCheck(Pair<S, Saut> state, TransitionSystem<Pair<S, Saut>, ?, ?> ts, Stack<Pair<S, Saut>> V, Set<Pair<S, Saut>> T) {
+        boolean cycleFound = false;
+        T.add(state);
+        V.add(state);
+        if (!(V.isEmpty())) {
+            do {
+                Set<Pair<S, Saut>> postSTag = post(ts, V.peek());
+                if (postSTag.contains(state))
+                    cycleFound = true;
+                else {
+                    postSTag.removeAll(T);
+                    if (postSTag.isEmpty())
+                        V.pop();
+                    else {
+                        Pair<S, Saut> sautPair = (Pair<S, Saut>) postSTag.toArray()[0];
+                        V.push(sautPair);
+                        T.add(sautPair);
+                    }
+                }
+            } while (!(V.isEmpty() || cycleFound));
+        }
+        return cycleFound;
+    }
+
+
+    private <Sts, Saut, A, P> void initializeInitialStates(TransitionSystem<Sts, A, P> ts, Automaton<Saut, P> aut, TransitionSystem<Pair<Sts, Saut>, A, Saut> ret, Set<Sts> ts_initial_states, Iterable<Saut> auto_inital_states, Queue<Pair<Sts, Saut>> reach) {
+        ts_initial_states.forEach(ts_initial -> {
+            Set<P> tsLabel = ts.getLabel(ts_initial);
+            auto_inital_states.forEach(auto_initial -> {
+                Set<Saut> nextAutStates = aut.nextStates(auto_initial, tsLabel);
+                ret.addAllAtomicPropositions(nextAutStates);
+                nextAutStates.stream().map(next_state -> new Pair(ts_initial, next_state)).forEach(initial_state -> {
+                    ret.addState(initial_state);
+                    ret.addInitialState(initial_state);
+                    reach.add(initial_state);
+                    ret.addToLabel(initial_state, (Saut) initial_state.second);
+                });
+            });
+        });
+    }
+
+    private <Sts, Saut, A, P> Set<Transition<Sts, A>> getTransitions(Pair<Sts, Saut> head, TransitionSystem<Sts, A, P> ts) {
+        Set<Transition<Sts, A>> transitions = ts.getTransitions();
+        return transitions.stream().
+                filter(transition -> transition.getFrom().equals(head.first)).collect(Collectors.toSet());
     }
 }
