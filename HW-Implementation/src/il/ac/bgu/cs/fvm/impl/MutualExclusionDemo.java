@@ -48,6 +48,9 @@ public class MutualExclusionDemo {
         verifyProperty(ts, createMutexAutomaton(ts), "Mutex");
         System.out.println("verify Starvation Property:");
         verifyProperty(ts, createStarvationAutomaton(ts), "Starvation");
+        System.out.println("Summery:");
+        System.out.println("peterson algorithm verify Mutex and Starvation this is way we don't need fairness assumption");
+
     }
 
     private void verifyProperty(TransitionSystem ts, Automaton aut, String property){
