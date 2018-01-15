@@ -29,9 +29,9 @@ public class MutualExclusionDemo {
     public void startDemo() {
         System.out.println("test Properties for peterson algorithm");
         System.out.println("create ProgramGraph for peterson algorithm - pg1");
-        ProgramGraph<String, String> pg1 = buildPeterson(1);
+        ProgramGraph<String, String> pg1 = createPetersonPG(1);
         System.out.println("create ProgramGraph for peterson algorithm - pg2");
-        ProgramGraph<String, String> pg2 = buildPeterson(2);
+        ProgramGraph<String, String> pg2 = createPetersonPG(2);
         System.out.println("create ProgramGraph interleavePG from interleave pg1 and pg2");
         ProgramGraph<Pair<String, String>, String> interleavePG = fvmFacadeImpl.interleave(pg1, pg2);
         Set<ActionDef> ad = set(new ParserBasedActDef());
@@ -64,28 +64,24 @@ public class MutualExclusionDemo {
     }
 
     private void removeAtomic(TransitionSystem ts) {
-        Set lst = new HashSet();
-        for (Object label : ts.getAtomicPropositions()) {
-            if (labels(label)) {
-                lst.add(label);
-            }
-        }
-        for (Object atomicProposition : lst) {
-            ts.removeAtomicProposition(atomicProposition);
-        }
+        Set atomicToRemove = new HashSet();
+        for (Object l : ts.getAtomicPropositions())
+            if (labels(l))
+                atomicToRemove.add(l);
+
+        for (Object ap : atomicToRemove)
+            ts.removeAtomicProposition(ap);
     }
 
     private void removeLabels(TransitionSystem ts) {
-        for (Object state : ts.getStates()) {
-            Set lst = new HashSet();
-            for (Object label : ts.getLabel(state)) {
-                if (labels(label)) {
-                    lst.add(label);
-                }
-            }
-            for (Object label : lst) {
-                ts.removeLabel(state, label);
-            }
+        for (Object s : ts.getStates()) {
+            Set labelsToRemove = new HashSet();
+            for (Object l : ts.getLabel(s))
+                if (labels(l))
+                    labelsToRemove.add(l);
+
+            for (Object label : labelsToRemove)
+                ts.removeLabel(s, label);
         }
     }
 
@@ -145,50 +141,57 @@ public class MutualExclusionDemo {
 
     // add labels
     private void addLabelsToTS(TransitionSystem<Pair<Pair<String, String>, Map<String, Object>>, String, String> ts) {
-        seq("wait1", "wait2", "crit1", "crit2", "crit1_enabled").stream().forEach(s -> ts.addAtomicPropositions(s));
+        seq("crit1", "crit2", "crit1_enabled", "wait1", "wait2").stream().forEach(s -> ts.addAtomicPropositions(s));
 
-
-        ts.getStates().stream().filter(s -> s.getFirst().getSecond().equals("crit2"))
-                .forEach(s -> ts.addToLabel(s, "crit2"));
-        ts.getStates().stream().filter(s -> s.getFirst().getFirst().equals("crit1"))
+        ts.getStates().stream()
+                .filter(s -> s.getFirst().getFirst().equals("crit1"))
                 .forEach(s -> ts.addToLabel(s, "crit1"));
-        Predicate<Pair<Pair<String, String>, ?>> _crit1 = ss -> ss.getFirst().getFirst().equals("crit1");
-        Predicate<Pair<Pair<String, String>, ?>> _crit2 = ss -> ss.getFirst().getFirst().equals("crit2");
-        ts.getStates().stream().filter(s -> fvmFacadeImpl.post(ts, s).stream().anyMatch(_crit1))
+        ts.getStates().stream()
+                .filter(s -> s.getFirst().getSecond().equals("crit2"))
+                .forEach(s -> ts.addToLabel(s, "crit2"));
+
+        Predicate<Pair<Pair<String, String>, ?>> equalToCrot1 = ss -> ss.getFirst().getFirst().equals("crit1");
+        Predicate<Pair<Pair<String, String>, ?>> equalToWait1 = ss -> ss.getFirst().getFirst().equals("wait1");
+        Predicate<Pair<Pair<String, String>, ?>> equalToWait2 = ss -> ss.getFirst().getFirst().equals("wait2");
+
+        ts.getStates().stream()
+                .filter(s -> fvmFacadeImpl.post(ts, s).stream().anyMatch(equalToCrot1))
                 .forEach(s -> ts.addToLabel(s, "crit1_enabled"));
-        ts.getStates().stream().filter(s -> s.getFirst().getFirst().equals("wait1"))
+        ts.getStates().stream()
+                .filter(equalToWait1)
                 .forEach(s -> ts.addToLabel(s, "wait1"));
-
-        ts.getStates().stream().filter(s -> s.getFirst().getSecond().equals("wait2"))
+        ts.getStates().stream()
+                .filter(equalToWait2)
                 .forEach(s -> ts.addToLabel(s, "wait2"));
-
-
     }
 
-    private ProgramGraph<String, String> buildPeterson(int id) {
-        ProgramGraph<String, String> pg = FvmFacade.createInstance().createProgramGraph();
+    private ProgramGraph<String, String> createPetersonPG(int id) {
+        ProgramGraph<String, String> pg = fvmFacadeImpl.createProgramGraph();
 
-        String noncrit = "noncrit" + id;
-        String wait = "wait" + id;
-        String crit = "crit" + id;
+        String noncritState = "noncrit" + id;
+        pg.addLocation(noncritState);
+        pg.addInitialLocation(noncritState);
 
-        pg.addLocation(noncrit);
-        pg.addLocation(wait);
-        pg.addLocation(crit);
+        String waitState = "wait" + id;
+        pg.addLocation(waitState);
 
-        pg.addInitialLocation(noncrit);
+        String critState = "crit" + id;
+        pg.addLocation(critState);
 
         pg.addTransition(
-                new PGTransition<>(noncrit, "true", "atomic{b" + id + ":=1;x:=" + (id == 1 ? 2 : 1) + "}", wait));
+                new PGTransition<>(
+                        critState, "true", "b" + id + ":=0", noncritState));
+        pg.addTransition(
+                new PGTransition<>(
+                        noncritState, "true", "atomic{b" + id + ":=1;x:=" + (id == 1 ? 2 : 1) + "}", waitState));
+        pg.addTransition(
+                new PGTransition<>(
+                        waitState, "x==" + id + " || b" + (id == 1 ? 2 : 1) + "==0", "", critState));
 
-        pg.addTransition(new PGTransition<>(wait, "x==" + id + " || b" + (id == 1 ? 2 : 1) + "==0", "", crit));
-        pg.addTransition(new PGTransition<>(crit, "true", "b" + id + ":=0", noncrit));
-
-        pg.addInitalization(asList("b" + id + ":=0", "x:=1"));
         pg.addInitalization(asList("b" + id + ":=0", "x:=2"));
+        pg.addInitalization(asList("b" + id + ":=0", "x:=1"));
 
         return pg;
-
     }
 
     public static void main(String[] args) {
